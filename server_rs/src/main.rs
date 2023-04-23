@@ -33,11 +33,6 @@ async fn process_test_data(mut tests: Vec<Test>, budget: i64) -> Vec<Test> {
 
 async fn run_test_handler(test_request: web::Json<TestRequest>) -> impl Responder {
     if test_request.secret != std::env::var("API_KEY").unwrap_or_default() {
-        println!(
-            "request secret: {}, local secret: {}",
-            test_request.secret,
-            std::env::var("API_KEY").unwrap_or_default()
-        );
         return HttpResponse::Forbidden().finish();
     }
 
@@ -45,9 +40,7 @@ async fn run_test_handler(test_request: web::Json<TestRequest>) -> impl Responde
     let budget = test_request.budget.clone();
     
     let start_time = SystemTime::now();
-
     let resp = process_test_data(tests, budget).await;
-
     let duration = SystemTime::now()
         .duration_since(start_time)
         .unwrap_or_default()
