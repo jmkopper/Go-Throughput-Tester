@@ -22,8 +22,15 @@ type Test struct {
 type TestArray []Test
 
 type TestRequest struct {
-	Secret string `json:"secret"`
-	Tests  TestArray
+	Secret string    `json:"secret"`
+	Tests  TestArray `json:"tests"`
+	Budget float64   `json:"budget"`
+}
+
+type TestResponse struct {
+	TestResults TestArray `json:"testResults"`
+	ServerStart float64   `json:"serverStart"`
+	ServerEnd   float64   `json:"serverEnd"`
 }
 
 func readTestArrayFromFile(filename string) ([]Test, error) {
@@ -55,7 +62,7 @@ func main() {
 	}
 
 	apiKey := os.Getenv("API_KEY")
-	testRequest := TestRequest{Secret: apiKey, Tests: testArray}
+	testRequest := TestRequest{Secret: apiKey, Tests: testArray, Budget: float64(len(testArray)) / 10}
 
 	requestBody, _ := json.Marshal(testRequest)
 	request, _ := http.NewRequest(http.MethodPost, serverURL, bytes.NewBuffer(requestBody))
@@ -73,10 +80,11 @@ func main() {
 		log.Fatalf("Unexpected response code %d: %s", response.StatusCode, string(responseBody))
 	}
 
-	var testResults TestArray
-	if err := json.Unmarshal(responseBody, &testResults); err != nil {
+	var testResponse TestResponse
+	if err := json.Unmarshal(responseBody, &testResponse); err != nil {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("Test results: %+v\n", testResults)
+	fmt.Printf("Test results: %d\n", len(testResponse.TestResults))
+	fmt.Printf("Server time: %f seconds\n", testResponse.ServerEnd-testResponse.ServerStart)
 }

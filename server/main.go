@@ -22,12 +22,18 @@ type Test struct {
 type TestArray []Test
 
 type TestRequest struct {
-	Secret string `json:"secret"`
-	Tests  TestArray
+	Secret string    `json:"secret"`
+	Tests  TestArray `json:"tests"`
+	Budget float64   `json:"budget"`
+}
+
+type TestResponse struct {
+	TestResults TestArray `json:"testResults"`
+	ServerStart float64   `json:"serverStart"`
+	ServerEnd   float64   `json:"serverEnd"`
 }
 
 func processTestData(tests TestArray, budget float64) TestArray {
-	log.Printf("Running process datas")
 	sort.Slice(tests, func(i, j int) bool { return tests[i].Value/tests[i].Cost < tests[j].Value/tests[j].Cost })
 	var spent float64
 	var results TestArray
@@ -52,21 +58,21 @@ func (th *testHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("server secret: %s client secret: %s", th.apiKey, testRequest.Secret)
-
 	if testRequest.Secret != th.apiKey {
 		http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 		return
 	}
 
 	testResults := make(chan TestArray)
+	startTime := float64(time.Now().UnixNano()) / 1e9
 	go func() {
-		testResults <- processTestData(testRequest.Tests, 100.0)
+		testResults <- processTestData(testRequest.Tests, testRequest.Budget)
 	}()
 
 	select {
 	case resp := <-testResults:
-		json.NewEncoder(w).Encode(resp)
+		endTime := float64(time.Now().UnixNano()) / 1e9
+		json.NewEncoder(w).Encode(TestResponse{TestResults: resp, ServerStart: startTime, ServerEnd: endTime})
 	case <-time.After(time.Second * 5):
 		http.Error(w, http.StatusText(http.StatusRequestTimeout), http.StatusRequestTimeout)
 	}
