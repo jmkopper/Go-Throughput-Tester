@@ -24,11 +24,12 @@ struct TestResponse {
     duration: f64,
 }
 
-async fn process_test_data(mut tests: Vec<Test>, budget: i64) -> Vec<Test> {
+async fn process_test_data(tests: &mut Vec<Test>, budget: i64) -> Vec<Test> {
     tests.sort_unstable_by_key(|test| test.value);
     tests
-        .into_iter()
+        .iter()
         .take_while(|test| test.value < budget)
+        .cloned()
         .collect()
 }
 
@@ -37,11 +38,11 @@ async fn run_test_handler(test_request: web::Json<TestRequest>) -> impl Responde
         return HttpResponse::Forbidden().finish();
     }
 
-    let tests = test_request.tests.clone();
+    let mut tests = test_request.tests.clone();
     let budget = test_request.budget.clone();
 
     let start_time = SystemTime::now();
-    let resp = process_test_data(tests, budget).await;
+    let resp = process_test_data(&mut tests, budget).await;
     let duration = SystemTime::now()
         .duration_since(start_time)
         .unwrap_or_default()
