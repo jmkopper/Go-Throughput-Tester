@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"sort"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 const port = 3000
@@ -14,10 +17,14 @@ const port = 3000
 type Test struct {
 	Value float64 `json:"x"`
 	Cost  float64 `json:"y"`
-	Name  string  `json:"name"`
 }
 
 type TestArray []Test
+
+type TestRequest struct {
+	Secret string `json:"secret"`
+	Tests  TestArray
+}
 
 func processTestData(tests TestArray, budget float64) TestArray {
 	log.Printf("Running process datas")
@@ -32,20 +39,29 @@ func processTestData(tests TestArray, budget float64) TestArray {
 	return results
 }
 
-type testHandler struct{}
+type testHandler struct {
+	apiKey string
+}
 
 func (th *testHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("content-type", "application/json")
-	var testArray TestArray
-	if err := json.NewDecoder(r.Body).Decode(&testArray); err != nil {
+	var testRequest TestRequest
+	if err := json.NewDecoder(r.Body).Decode(&testRequest); err != nil {
 		log.Println(err)
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 
+	log.Printf("server secret: %s client secret: %s", th.apiKey, testRequest.Secret)
+
+	if testRequest.Secret != th.apiKey {
+		http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+		return
+	}
+
 	testResults := make(chan TestArray)
 	go func() {
-		testResults <- processTestData(testArray, 100.0)
+		testResults <- processTestData(testRequest.Tests, 100.0)
 	}()
 
 	select {
@@ -57,8 +73,13 @@ func (th *testHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	err := godotenv.Load(".env")
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
 	mux := http.NewServeMux()
-	th := &testHandler{}
+	th := &testHandler{os.Getenv("API_KEY")}
 	mux.Handle("/runtest", th)
 
 	listenAddr := fmt.Sprintf(":%d", port)

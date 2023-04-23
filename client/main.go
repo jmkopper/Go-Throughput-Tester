@@ -7,6 +7,9 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
+
+	"github.com/joho/godotenv"
 )
 
 const serverURL = "http://localhost:3000/runtest"
@@ -14,10 +17,14 @@ const serverURL = "http://localhost:3000/runtest"
 type Test struct {
 	Value float64 `json:"x"`
 	Cost  float64 `json:"y"`
-	Name  string  `json:"name"`
 }
 
 type TestArray []Test
+
+type TestRequest struct {
+	Secret string `json:"secret"`
+	Tests  TestArray
+}
 
 func readTestArrayFromFile(filename string) ([]Test, error) {
 	fileBytes, err := ioutil.ReadFile(filename)
@@ -37,12 +44,20 @@ func readTestArrayFromFile(filename string) ([]Test, error) {
 func main() {
 	client := http.DefaultClient
 
+	err := godotenv.Load(".env")
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
 	testArray, err := readTestArrayFromFile("tests.json")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	requestBody, _ := json.Marshal(testArray)
+	apiKey := os.Getenv("API_KEY")
+	testRequest := TestRequest{Secret: apiKey, Tests: testArray}
+
+	requestBody, _ := json.Marshal(testRequest)
 	request, _ := http.NewRequest(http.MethodPost, serverURL, bytes.NewBuffer(requestBody))
 	request.Header.Set("Content-Type", "application/json")
 
