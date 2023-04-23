@@ -19,58 +19,56 @@ type Test struct {
 
 type TestArray []Test
 
-func (t TestArray) Len() int {
-	return len(t)
-}
-
-func (t TestArray) Swap(i, j int) {
-	t[i], t[j] = t[j], t[i]
-}
-
-func (t TestArray) Less(i, j int) bool {
-	return t[i].Value/t[i].Cost < t[j].Value/t[j].Cost
+func processTestData(tests TestArray, budget float64) TestArray {
+	log.Printf("Running process datas")
+	sort.Slice(tests, func(i, j int) bool { return tests[i].Value/tests[i].Cost < tests[j].Value/tests[j].Cost })
+	var spent float64
+	var results TestArray
+	spent = 0
+	for i := 0; i < len(tests) && spent <= budget; i++ {
+		results = append(results, tests[i])
+		spent += tests[i].Cost
+	}
+	return results
 }
 
 type testHandler struct{}
 
-func processTestData(t TestArray, budget float64) TestArray {
-	sort.Sort(t)
-	var result TestArray
-	var spent float64
-	spent = 0
-	i := 0
-	for spent <= budget {
-		result = append(result, t[i])
-		i += 1
-		spent += t[i].Cost
-	}
-	return result
-}
-
-func (th testHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (th *testHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("content-type", "application/json")
 	var testArray TestArray
 	if err := json.NewDecoder(r.Body).Decode(&testArray); err != nil {
 		log.Println(err)
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
 	}
 
 	testResults := make(chan TestArray)
-	go processTestData(<-testResults, 100.0)
+	go func() {
+		testResults <- processTestData(testArray, 100.0)
+	}()
 
 	select {
 	case resp := <-testResults:
 		json.NewEncoder(w).Encode(resp)
 	case <-time.After(time.Second * 5):
-		fmt.Fprintf(w, "timeout")
+		http.Error(w, http.StatusText(http.StatusRequestTimeout), http.StatusRequestTimeout)
 	}
 }
 
 func main() {
 	mux := http.NewServeMux()
-	th := testHandler{}
-
+	th := &testHandler{}
 	mux.Handle("/runtest", th)
-	listenAt := fmt.Sprintf(":%d", port)
-	log.Printf("Listening on: http://localhost:%d\n", port)
-	log.Fatal(http.ListenAndServe(listenAt, mux))
+
+	listenAddr := fmt.Sprintf(":%d", port)
+	srv := &http.Server{
+		Addr:    listenAddr,
+		Handler: mux,
+	}
+
+	log.Printf("Listening on http://localhost%s\n", listenAddr)
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("failed to serve: %v", err)
+	}
 }
