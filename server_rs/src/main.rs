@@ -1,7 +1,7 @@
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
-use std::time::{SystemTime};
+use std::time::SystemTime;
 
 const PORT: &str = "3000";
 
@@ -26,28 +26,22 @@ struct TestResponse {
 
 async fn process_test_data(mut tests: Vec<Test>, budget: i64) -> Vec<Test> {
     tests.sort_unstable_by_key(|test| test.value);
-    tests.into_iter()
-         .take_while(|test| test.value < budget)
-         .collect()
+    tests
+        .into_iter()
+        .take_while(|test| test.value < budget)
+        .collect()
 }
 
 async fn run_test_handler(test_request: web::Json<TestRequest>) -> impl Responder {
     if test_request.secret != std::env::var("API_KEY").unwrap_or_default() {
-        println!(
-            "request secret: {}, local secret: {}",
-            test_request.secret,
-            std::env::var("API_KEY").unwrap_or_default()
-        );
         return HttpResponse::Forbidden().finish();
     }
 
     let tests = test_request.tests.clone();
     let budget = test_request.budget.clone();
-    
+
     let start_time = SystemTime::now();
-
     let resp = process_test_data(tests, budget).await;
-
     let duration = SystemTime::now()
         .duration_since(start_time)
         .unwrap_or_default()
