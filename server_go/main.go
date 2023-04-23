@@ -15,32 +15,25 @@ import (
 const port = 3000
 
 type Test struct {
-	Value float64 `json:"x"`
-	Cost  float64 `json:"y"`
+	Value int `json:"value"`
 }
 
-type TestArray []Test
-
 type TestRequest struct {
-	Secret string    `json:"secret"`
-	Tests  TestArray `json:"tests"`
-	Budget float64   `json:"budget"`
+	Secret string `json:"secret"`
+	Tests  []Test `json:"tests"`
+	Budget int    `json:"budget"`
 }
 
 type TestResponse struct {
-	TestResults TestArray `json:"testResults"`
-	ServerStart float64   `json:"serverStart"`
-	ServerEnd   float64   `json:"serverEnd"`
+	TestResults []Test  `json:"testResults"`
+	Duration    float64 `json:"duration"`
 }
 
-func processTestData(tests TestArray, budget float64) TestArray {
-	sort.Slice(tests, func(i, j int) bool { return tests[i].Value/tests[i].Cost < tests[j].Value/tests[j].Cost })
-	var spent float64
-	var results TestArray
-	spent = 0
-	for i := 0; i < len(tests) && spent <= budget; i++ {
+func processTestData(tests []Test, budget int) []Test {
+	sort.Slice(tests, func(i, j int) bool { return tests[i].Value < tests[j].Value })
+	var results []Test
+	for i := 0; i < len(tests) && tests[i].Value < budget; i++ {
 		results = append(results, tests[i])
-		spent += tests[i].Cost
 	}
 	return results
 }
@@ -63,16 +56,16 @@ func (th *testHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	testResults := make(chan TestArray)
-	startTime := float64(time.Now().UnixNano()) / 1e9
+	testResults := make(chan []Test)
+	start := time.Now()
 	go func() {
 		testResults <- processTestData(testRequest.Tests, testRequest.Budget)
 	}()
 
 	select {
 	case resp := <-testResults:
-		endTime := float64(time.Now().UnixNano()) / 1e9
-		json.NewEncoder(w).Encode(TestResponse{TestResults: resp, ServerStart: startTime, ServerEnd: endTime})
+		duration := float64(time.Since(start).Nanoseconds()) / 1e9
+		json.NewEncoder(w).Encode(TestResponse{TestResults: resp, Duration: duration})
 	case <-time.After(time.Second * 5):
 		http.Error(w, http.StatusText(http.StatusRequestTimeout), http.StatusRequestTimeout)
 	}

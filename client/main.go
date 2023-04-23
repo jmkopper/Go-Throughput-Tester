@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -15,22 +16,23 @@ import (
 const serverURL = "http://localhost:3000/runtest"
 
 type Test struct {
-	Value float64 `json:"x"`
-	Cost  float64 `json:"y"`
+	Value int `json:"value"`
 }
 
-type TestArray []Test
-
 type TestRequest struct {
-	Secret string    `json:"secret"`
-	Tests  TestArray `json:"tests"`
-	Budget float64   `json:"budget"`
+	Secret string `json:"secret"`
+	Tests  []Test `json:"tests"`
+	Budget int    `json:"budget"`
 }
 
 type TestResponse struct {
-	TestResults TestArray `json:"testResults"`
-	ServerStart float64   `json:"serverStart"`
-	ServerEnd   float64   `json:"serverEnd"`
+	TestResults []Test  `json:"testResults"`
+	Duration    float64 `json:"duration"`
+}
+
+type CollectedResults struct {
+	ServerTimes []float64 `json:"serverTimes"`
+	ClientTimes []float64 `json:"clientTimes"`
 }
 
 func readTestArrayFromFile(filename string) ([]Test, error) {
@@ -48,9 +50,42 @@ func readTestArrayFromFile(filename string) ([]Test, error) {
 	return testArray, nil
 }
 
-func main() {
+func runTests(testArray *[]Test, apiKey string, numRuns int) CollectedResults {
+	testRequest := TestRequest{Secret: apiKey, Tests: *testArray, Budget: 500}
 	client := http.DefaultClient
+	var collectedResults CollectedResults
+	requestBody, _ := json.Marshal(testRequest)
+	for i := 0; i < numRuns; i++ {
+		start := time.Now()
+		request, _ := http.NewRequest(http.MethodPost, serverURL, bytes.NewBuffer(requestBody))
+		request.Header.Set("Content-Type", "application/json")
 
+		response, err := client.Do(request)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer response.Body.Close()
+
+		responseBody, _ := ioutil.ReadAll(response.Body)
+
+		if response.StatusCode != http.StatusOK {
+			log.Fatalf("Unexpected response code %d: %s", response.StatusCode, string(responseBody))
+		}
+
+		var testResponse TestResponse
+		if err := json.Unmarshal(responseBody, &testResponse); err != nil {
+			log.Fatal(err)
+		}
+
+		duration := float64(time.Since(start).Nanoseconds()) / 1e9
+		collectedResults.ServerTimes = append(collectedResults.ServerTimes, testResponse.Duration)
+		collectedResults.ClientTimes = append(collectedResults.ClientTimes, duration)
+	}
+
+	return collectedResults
+}
+
+func main() {
 	err := godotenv.Load(".env")
 	if err != nil {
 		log.Fatal("Error loading .env file")
@@ -62,29 +97,22 @@ func main() {
 	}
 
 	apiKey := os.Getenv("API_KEY")
-	testRequest := TestRequest{Secret: apiKey, Tests: testArray, Budget: float64(len(testArray)) / 10}
 
-	requestBody, _ := json.Marshal(testRequest)
-	request, _ := http.NewRequest(http.MethodPost, serverURL, bytes.NewBuffer(requestBody))
-	request.Header.Set("Content-Type", "application/json")
+	collectedResults := runTests(&testArray, apiKey, 100)
 
-	response, err := client.Do(request)
+	file, err := os.Create("results.json")
 	if err != nil {
-		log.Fatal(err)
-	}
-	defer response.Body.Close()
-
-	responseBody, _ := ioutil.ReadAll(response.Body)
-
-	if response.StatusCode != http.StatusOK {
-		log.Fatalf("Unexpected response code %d: %s", response.StatusCode, string(responseBody))
+		fmt.Println("Error creating file:", err)
+		return
 	}
 
-	var testResponse TestResponse
-	if err := json.Unmarshal(responseBody, &testResponse); err != nil {
-		log.Fatal(err)
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	err = encoder.Encode(collectedResults)
+	if err != nil {
+		fmt.Println("Error encoding JSON:", err)
+		return
 	}
 
-	fmt.Printf("Test results: %d\n", len(testResponse.TestResults))
-	fmt.Printf("Server time: %f seconds\n", testResponse.ServerEnd-testResponse.ServerStart)
 }
