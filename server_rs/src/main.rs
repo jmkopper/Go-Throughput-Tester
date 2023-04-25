@@ -24,25 +24,23 @@ struct TestResponse {
     duration: f64,
 }
 
-async fn process_test_data(tests: &mut Vec<Test>, budget: i64) -> Vec<Test> {
-    tests.sort_unstable_by_key(|test| test.value);
-    tests
+async fn process_test_data(test_request: &mut TestRequest) -> Vec<Test> {
+    test_request.tests.sort_unstable_by_key(|test| test.value);
+    test_request
+        .tests
         .iter()
-        .take_while(|test| test.value < budget)
+        .take_while(|test| test.value < test_request.budget)
         .cloned()
         .collect()
 }
 
-async fn run_test_handler(test_request: web::Json<TestRequest>) -> impl Responder {
+async fn run_test_handler(mut test_request: web::Json<TestRequest>) -> impl Responder {
     if test_request.secret != std::env::var("API_KEY").unwrap_or_default() {
         return HttpResponse::Forbidden().finish();
     }
 
-    let mut tests = test_request.tests.clone();
-    let budget = test_request.budget.clone();
-
     let start_time = SystemTime::now();
-    let resp = process_test_data(&mut tests, budget).await;
+    let resp = process_test_data(&mut test_request).await;
     let duration = SystemTime::now()
         .duration_since(start_time)
         .unwrap_or_default()
